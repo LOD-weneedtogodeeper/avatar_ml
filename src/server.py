@@ -11,7 +11,6 @@ from pprint import pprint
 from signal import signal, SIGINT
 from sanic import Sanic, response
 from sanic_cors import CORS, cross_origin
-from dateutil import parser
 from sanic_prometheus import monitor
 from first_order_model import FirstOrderModel
 
@@ -42,7 +41,7 @@ async def infer(request):
    
 
     return response.json(
-        {'video': b64encode(preds)},
+        {'video': b64encode(preds).decode('utf-8')},
         headers={'X-Served-By': 'sanic'},
         status=200
         )
