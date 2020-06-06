@@ -5,14 +5,15 @@ import yaml
 import imageio
 import numpy as np
 import torch
-
-
+torch.multiprocessing.set_start_method('forkserver')
 from tqdm import tqdm
 from skimage.transform import resize
 from skimage import img_as_ubyte
 from sync_batchnorm import DataParallelWithCallback
 from argparse import ArgumentParser
 
+from PIL import Image
+from io import BytesIO
 from modules.generator import OcclusionAwareGenerator
 from modules.keypoint_detector import KPDetector
 from utils.animate import normalize_kp
@@ -20,7 +21,6 @@ from scipy.spatial import ConvexHull
 
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.7")
-
 
 class FirstOrderModel:
 
@@ -67,11 +67,11 @@ class FirstOrderModel:
     def make_animation(self, source_image, driving_video,relative=True, adapt_movement_scale=True, cpu=False):
         with torch.no_grad():
             predictions = []
-            source = torch.tensor(source_image[np.newaxis].astype(np.float32), device="cuda" if self.cpu else "cpu").permute(0, 3, 1, 2)
-            #if not cpu:
-            #    source = source.cuda()
+            source = torch.tensor(source_image[np.newaxis].astype(np.float32)).permute(0, 3, 1, 2)
+            if not cpu:
+                source = source.cuda()
             driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3)
-            kp_source = self.kp_detector#(source)
+            kp_source = self.kp_detector(source)
             kp_driving_initial = self.kp_detector(driving[:, :, 0])
 
             for frame_idx in tqdm(range(driving.shape[2])):
@@ -101,5 +101,12 @@ class FirstOrderModel:
         driving_video = [resize(frame, (256, 256))[..., :3] for frame in driving_video]
 
         predictions = self.make_animation(source_image, driving_video)
-
-        return predictions
+        images = [img_as_ubyte(frame) for frame in predictions]
+        
+        
+        video_seq = [Image.fromarray(v_frame) for v_frame in images]
+        buffered = BytesIO()
+        video_seq[0].save(buffered, save_all=True,format="GIF", append_images=video_seq[1:]\
+                    ,loop=0,duration=int((1000)/fps))
+        
+        return buffered.getvalue()

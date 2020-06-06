@@ -4,10 +4,9 @@ import uvloop
 import time
 import datetime
 import os
-import torch
 
-torch.multiprocessing.set_start_method('spawn')
-from base64 import b64decode
+
+from base64 import b64decode, b64encode
 from pprint import pprint
 from signal import signal, SIGINT
 from sanic import Sanic, response
@@ -39,31 +38,24 @@ async def infer(request):
             )
 
     image, video = (b64decode(image), b64decode(video))
-    print(model.infer(image, video))
-    return response.json(test)
+    preds = model.infer(image, video)
+   
+
+    return response.json(
+        {'video': b64encode(preds)},
+        headers={'X-Served-By': 'sanic'},
+        status=200
+        )
 
 
 
 if __name__ == "__main__":
+    sanic_config = {
+        "host": "127.0.0.1",
+        "port": 9999,
+        "workers": 1,
+        "debug": False,
+        "access_log": False
+    }
 
-    asyncio.set_event_loop(uvloop.new_event_loop())
-    serv_coro = app.run(host="0.0.0.0", port=9999,workers=100, return_asyncio_server=True)
-    loop = asyncio.get_event_loop()
-    serv_task = asyncio.ensure_future(serv_coro, loop=loop)
-    signal(SIGINT, lambda s, f: loop.stop())
-    server = loop.run_until_complete(serv_task)
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt as e:
-        loop.stop()
-    finally:
-        server.before_stop()
-
-        # Wait for server to close
-        close_task = server.close()
-        loop.run_until_complete(close_task)
-
-        # Complete all tasks on the loop
-        for connection in server.connections:
-            connection.close_if_idle()
-        server.after_stop()
+    app.run(**sanic_config)
